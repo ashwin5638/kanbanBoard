@@ -1,0 +1,93 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  tenants   Tenant[]
+  users     User[]
+
+  @@map("organizations")
+}
+
+model Tenant {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  name           String
+  createdAt      DateTime     @default(now()) @map("created_at")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  boards         Board[]
+  users          UserTenant[]
+
+  @@map("tenants")
+}
+
+model User {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  email          String       @unique
+  passwordHash   String       @map("password_hash")
+  name           String
+  role           String       // ADMIN, MEMBER, etc.
+  createdAt      DateTime     @default(now()) @map("created_at")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tenants        UserTenant[]
+  tasks          Task[]       @relation("AssignedTasks")
+
+  @@map("users")
+}
+
+model UserTenant {
+  userId   String @map("user_id")
+  tenantId String @map("tenant_id")
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([userId, tenantId])
+  @@map("user_tenants")
+}
+
+model Board {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  title     String
+  createdAt DateTime @default(now()) @map("created_at")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  columns   Column[]
+
+  @@map("boards")
+}
+
+model Column {
+  id        String   @id @default(uuid())
+  boardId   String   @map("board_id")
+  title     String
+  position  Int
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+
+  @@map("columns")
+}
+
+model Task {
+  id          String   @id @default(uuid())
+  columnId    String   @map("column_id")
+  title       String
+  description String?
+  position    Int
+  assignedToId String? @map("assigned_to_id")
+  version     Int      @default(1) // Used for optimistic locking
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  column      Column   @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  assignedTo  User?    @relation("AssignedTasks", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  @@map("tasks")
+}

@@ -1,0 +1,16 @@
+node_modules
+.env
+*.db
+*.db-journal
+dev.db
+dist
+build
+generated
+prisma/dev.db
+.DS_Store
+*.log
+coverage
+__pycache__
+*.pyc
+.env.local
+.env.*.local
