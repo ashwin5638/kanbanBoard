@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const prisma = require('./src/config/db'); 
+const authRoute = require('./src/routes/authRoutes')
 
 const app = express();
 
@@ -26,6 +27,8 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+
+app.use('/auth', authRoute)
 
 app.listen(5000, () => {
   console.log(`Server running on port 5000`);
