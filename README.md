@@ -1,5 +1,5 @@
 # 📋 Multi-Tenant Collaborative Kanban Board System
-> **JulleyOnline FDE Intern Assignment — Comprehensive Implementation**
+
 
 A production-ready, full-stack collaborative Kanban board platform engineered with multi-tenant data isolation, optimistic concurrency locking, real-time WebSocket synchronization, and role-based access control (RBAC).
 
