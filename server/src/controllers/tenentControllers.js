@@ -22,10 +22,22 @@ const createTenant = async (req, res) => {
         },
       });
 
-      await tx.userTenant.create({
+      await tx.membership.create({
         data: {
           userId,
           tenantId: newTenant.id,
+          role: 'TENANT_ADMIN',
+        },
+      });
+
+      await tx.activityLog.create({
+        data: {
+          tenantId: newTenant.id,
+          userId,
+          action: 'TENANT_CREATED',
+          entityType: 'TENANT',
+          entityId: newTenant.id,
+          details: `Created workspace "${name}"`,
         },
       });
 
@@ -47,16 +59,20 @@ const getTenants = async (req, res) => {
       return res.status(401).json({ success: false, error: 'Unauthorized: Missing user context' });
     }
 
-    const userTenants = await prisma.userTenant.findMany({
+    const memberships = await prisma.membership.findMany({
       where: { userId },
       include: {
         tenant: {
-          include: { _count: { select: { boards: true } } }
-        }
-      }
+          include: { _count: { select: { boards: true } } },
+        },
+      },
     });
 
-    const tenants = userTenants.map(ut => ut.tenant);
+    const tenants = memberships.map((m) => ({
+      ...m.tenant,
+      membershipRole: m.role,
+    }));
+
     res.status(200).json({ success: true, data: tenants });
   } catch (error) {
     console.error('Get tenants error:', error);
@@ -64,7 +80,45 @@ const getTenants = async (req, res) => {
   }
 };
 
+const updateTenant = async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const { name } = req.body;
+
+    if (!name?.trim()) {
+      return res.status(400).json({ success: false, error: 'Tenant name is required' });
+    }
+
+    const updated = await prisma.tenant.update({
+      where: { id: tenantId },
+      data: { name: name.trim() },
+    });
+
+    res.status(200).json({ success: true, data: updated });
+  } catch (error) {
+    console.error('Update tenant error:', error);
+    res.status(500).json({ success: false, error: 'Failed to update tenant' });
+  }
+};
+
+const deleteTenant = async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+
+    await prisma.tenant.delete({
+      where: { id: tenantId },
+    });
+
+    res.status(200).json({ success: true, message: 'Workspace deleted successfully' });
+  } catch (error) {
+    console.error('Delete tenant error:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete tenant' });
+  }
+};
+
 module.exports = {
   getTenants,
   createTenant,
+  updateTenant,
+  deleteTenant,
 };

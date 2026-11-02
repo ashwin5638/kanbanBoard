@@ -1,23 +1,25 @@
 <template>
   <div class="app-root">
-    <RouterView />
+    <Login v-if="currentRoute.page === 'login'" />
+    <Dashboard v-else-if="currentRoute.page === 'dashboard'" />
+    <Board v-else-if="currentRoute.page === 'board'" />
   </div>
 </template>
 
 <script setup>
 import { onMounted } from 'vue';
-import { provideAuth } from './context/AuthContext';
-import { provideTenant } from './context/TenantContext';
-import { provideRouter, RouterView } from './routes';
+import { currentRoute } from './routes';
+import { useTenant } from './context/TenantContext';
 
-provideAuth();
-const tenantState = provideTenant();
-provideRouter();
+import Login from './pages/Login.vue';
+import Dashboard from './pages/Dashboard.vue';
+import Board from './pages/Board.vue';
+
+const { loadTenants, loadOrganization } = useTenant();
 
 onMounted(async () => {
-  // Preload tenants if user is authenticated
-  await tenantState.loadTenants();
-  await tenantState.loadOrganization();
+  await loadTenants();
+  await loadOrganization();
 });
 </script>
 
@@ -28,3 +30,4 @@ onMounted(async () => {
   flex-direction: column;
 }
 </style>
+

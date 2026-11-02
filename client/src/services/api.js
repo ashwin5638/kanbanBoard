@@ -28,12 +28,25 @@ export const storage = {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem(TENANT_KEY);
+    // Remove any conflicting legacy tokens
+    localStorage.removeItem('token');
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('refreshToken');
   }
 };
 
 async function request(path, options = {}) {
   const url = `${BASE_URL}${path}`;
   const token = storage.getToken();
+  const isProtectedPath = path.startsWith('/api/') && path !== '/api/health';
+
+  if (isProtectedPath && !token) {
+    const error = new Error('Authentication required to make this request');
+    error.status = 401;
+    error.code = 'AUTH_REQUIRED';
+    throw error;
+  }
+
   const tenantId = storage.getTenantId();
 
   const headers = {
@@ -63,6 +76,14 @@ async function request(path, options = {}) {
     const data = await res.json().catch(() => null);
 
     if (!res.ok) {
+      if (res.status === 401 && !path.startsWith('/auth/')) {
+        // Clear invalid/expired session state to prevent infinite error loops
+        storage.clearAll();
+        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
+      }
+
       const errorMessage = data?.error || data?.message || `Request failed with status ${res.status}`;
       const error = new Error(errorMessage);
       error.status = res.status;
@@ -92,12 +113,16 @@ export const api = {
   // Organizations endpoints
   organizations: {
     getDetails: () => request('/api/organizations/details'),
+    update: (name) => request('/api/organizations/update', { method: 'PUT', body: { name } }),
+    getActivities: () => request('/api/organizations/activities'),
   },
 
   // Tenants endpoints
   tenants: {
     list: () => request('/api/tenants'),
     create: (name) => request('/api/tenants', { method: 'POST', body: { name } }),
+    update: (tenantId, name) => request(`/api/tenants/${tenantId}`, { method: 'PUT', body: { name } }),
+    delete: (tenantId) => request(`/api/tenants/${tenantId}`, { method: 'DELETE' }),
   },
 
   // Boards endpoints
@@ -138,4 +163,3 @@ export const api = {
 };
 
 export default api;
-

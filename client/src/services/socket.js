@@ -1,12 +1,16 @@
-// Real-time Presence & Activity Service
+import { io } from 'socket.io-client';
+import { storage } from './api';
+
+const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 class SocketService {
   constructor() {
+    this.socket = null;
     this.listeners = new Map();
-    this.ws = null;
     this.connected = false;
     this.currentUser = null;
+    this.currentTenantId = null;
     this.currentBoardId = null;
-    this.heartbeatInterval = null;
     this.activities = [];
     this.onlineUsers = [];
   }
@@ -20,77 +24,154 @@ class SocketService {
     return () => this.off(event, callback);
   }
 
-  // Unsubscribe from an event
   off(event, callback) {
     if (this.listeners.has(event)) {
       this.listeners.get(event).delete(callback);
     }
   }
 
-  // Emit event to subscribers
   emit(event, data) {
     if (this.listeners.has(event)) {
       this.listeners.get(event).forEach((cb) => {
         try {
           cb(data);
         } catch (err) {
-          console.error(`Error in event listener for ${event}:`, err);
+          console.error(`Error in local event handler for ${event}:`, err);
         }
       });
     }
 
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ event, data }));
+    if (this.socket && this.socket.connected) {
+      this.socket.emit(event, data);
     }
   }
 
-  // Connect to workspace / board presence
-  connect(user, boardId = null) {
-    this.currentUser = user;
-    this.currentBoardId = boardId;
-    this.connected = true;
+  // Connect to real-time WebSocket backend
+  connect(user, tenantId = null) {
+    this.currentUser = user || storage.getUser();
+    this.currentTenantId = tenantId || storage.getTenantId();
 
-    // Initialize mock online presence teammates
-    this._initPresence();
+    const token = storage.getToken();
 
-    this.emit('connection_status', { connected: true });
-    this.emit('presence_update', this.onlineUsers);
+    if (!this.socket) {
+      try {
+        this.socket = io(SOCKET_URL, {
+          auth: { token },
+          transports: ['websocket', 'polling'],
+          reconnection: true,
+          reconnectionAttempts: 10,
+          reconnectionDelay: 1000,
+        });
+
+        this.socket.on('connect', () => {
+          this.connected = true;
+          this.emit('connection_status', { connected: true });
+
+          // Join current tenant room upon connection
+          if (this.currentTenantId) {
+            this.joinTenant(this.currentTenantId);
+          }
+          if (this.currentBoardId) {
+            this.joinBoard(this.currentBoardId);
+          }
+        });
+
+        this.socket.on('disconnect', () => {
+          this.connected = false;
+          this.emit('connection_status', { connected: false });
+        });
+
+        // Listen for presence updates from tenant room
+        this.socket.on('presence_update', (users) => {
+          this.onlineUsers = users;
+          this.emit('presence_update', users);
+        });
+
+        // Listen for live activity events from tenant room
+        this.socket.on('activity_event', (act) => {
+          this.logActivity(act);
+        });
+
+        // Live task synchronization events from board room
+        this.socket.on('task_created', (task) => {
+          this.emit('task_created', task);
+        });
+
+        this.socket.on('task_updated', (task) => {
+          this.emit('task_updated', task);
+        });
+
+        this.socket.on('task_deleted', (payload) => {
+          this.emit('task_deleted', payload);
+        });
+      } catch (err) {
+        console.warn('Socket connection error, running in local fallback mode:', err);
+      }
+    } else if (this.socket.disconnected) {
+      this.socket.connect();
+    }
   }
 
   disconnect() {
+    if (this.socket) {
+      this.socket.disconnect();
+    }
     this.connected = false;
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-    }
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
     this.emit('connection_status', { connected: false });
   }
 
-  setViewingBoard(boardId) {
-    this.currentBoardId = boardId;
-    if (this.currentUser) {
-      this.logActivity({
-        userId: this.currentUser.id || this.currentUser.userId,
-        userName: this.currentUser.name || 'Current User',
-        action: 'viewed_board',
-        details: `joined board ${boardId}`,
-        timestamp: new Date().toISOString()
+  joinTenant(tenantId) {
+    this.currentTenantId = tenantId;
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('join_tenant', {
+        tenantId,
+        user: this.currentUser,
       });
     }
   }
 
-  logActivity({ action, details, meta = {} }) {
+  joinBoard(boardId) {
+    this.currentBoardId = boardId;
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('join_board', { boardId });
+    }
+    this.logActivity({
+      action: 'viewed_board',
+      details: `joined board ${boardId}`,
+    });
+  }
+
+  leaveBoard(boardId) {
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('leave_board', { boardId });
+    }
+    if (this.currentBoardId === boardId) {
+      this.currentBoardId = null;
+    }
+  }
+
+  setViewingBoard(boardId) {
+    this.joinBoard(boardId);
+  }
+
+  broadcastTaskMoved(taskData) {
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('task_moved_client', {
+        ...taskData,
+        tenantId: this.currentTenantId,
+        boardId: this.currentBoardId,
+      });
+    }
+  }
+
+  logActivity({ action, details, meta = {}, userName = null }) {
     const activity = {
       id: 'act_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-      userName: this.currentUser?.name || 'You',
-      userEmail: this.currentUser?.email || '',
+      userName: userName || this.currentUser?.name || 'You',
       action,
       details,
       meta,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
 
     this.activities.unshift(activity);
@@ -109,47 +190,7 @@ class SocketService {
   getOnlineUsers() {
     return [...this.onlineUsers];
   }
-
-  _initPresence() {
-    const baseUsers = [];
-    if (this.currentUser) {
-      baseUsers.push({
-        id: this.currentUser.id || this.currentUser.userId || 'self',
-        name: this.currentUser.name || 'You',
-        email: this.currentUser.email || '',
-        role: this.currentUser.role || 'MEMBER',
-        status: 'online',
-        isSelf: true,
-        lastActive: 'Just now'
-      });
-    }
-
-    // Teammate presence
-    baseUsers.push(
-      {
-        id: 'u_collab_1',
-        name: 'Sarah Connor',
-        email: 'sarah@example.com',
-        role: 'ADMIN',
-        status: 'online',
-        isSelf: false,
-        lastActive: 'Viewing board'
-      },
-      {
-        id: 'u_collab_2',
-        name: 'Alex Rivera',
-        email: 'alex@example.com',
-        role: 'MEMBER',
-        status: 'idle',
-        isSelf: false,
-        lastActive: '5m ago'
-      }
-    );
-
-    this.onlineUsers = baseUsers;
-  }
 }
 
 export const socket = new SocketService();
 export default socket;
-

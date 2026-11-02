@@ -159,8 +159,8 @@ import Sidebar from '../components/Sidebar/Sidebar.vue';
 import ActivityLog from '../components/ActivityLog/ActivityLog.vue';
 
 const router = useRouter();
-const { user } = useAuth();
-const { activeTenant, activeTenantId, organization } = useTenant();
+const { user, isAuthenticated, isInitialized } = useAuth();
+const { activeTenant, activeTenantId, organization, loadTenants, loadOrganization } = useTenant();
 const { onlineUsers } = usePresence();
 
 const boards = ref([]);
@@ -172,7 +172,7 @@ const isCreating = ref(false);
 const modalInputRef = ref(null);
 
 const fetchBoards = async () => {
-  if (!activeTenantId.value) return;
+  if (!isInitialized.value || !isAuthenticated.value || !activeTenantId.value) return;
   isLoading.value = true;
   try {
     const res = await api.boards.list();
@@ -184,13 +184,21 @@ const fetchBoards = async () => {
   }
 };
 
-onMounted(() => {
-  fetchBoards();
+onMounted(async () => {
+  if (!isInitialized.value || !isAuthenticated.value) return;
+  await loadTenants();
+  await loadOrganization();
+  await fetchBoards();
 });
 
-watch(activeTenantId, () => {
-  fetchBoards();
-});
+watch(
+  [isInitialized, isAuthenticated, activeTenantId],
+  ([initialized, authenticated, tenantId]) => {
+    if (initialized && authenticated && tenantId) {
+      fetchBoards();
+    }
+  }
+);
 
 watch(showCreateModal, (open) => {
   if (open) {
@@ -633,4 +641,3 @@ const totalTasks = computed(() => {
   to { transform: rotate(360deg); }
 }
 </style>
-

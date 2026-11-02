@@ -1,41 +1,44 @@
-import { reactive, computed, inject, provide } from 'vue';
+import { reactive, computed } from 'vue';
 import { api, storage } from '../services/api';
 import socket from '../services/socket';
 
-const TENANT_KEY = Symbol('TenantContext');
+// Simple reactive tenant state
+const state = reactive({
+  organization: null,
+  tenants: [],
+  activeTenantId: storage.getTenantId() || null,
+  isLoading: false,
+  error: null,
+});
 
-export function createTenantState() {
-  const state = reactive({
-    organization: null,
-    tenants: [],
-    activeTenantId: storage.getTenantId() || null,
-    isLoading: false,
-    error: null,
-  });
-
+export function useTenant() {
   const activeTenant = computed(() => {
     if (!state.tenants.length) return null;
     return state.tenants.find((t) => t.id === state.activeTenantId) || state.tenants[0] || null;
   });
 
   const loadTenants = async () => {
+    const token = storage.getToken();
+    if (!token) {
+      state.tenants = [];
+      return [];
+    }
+
     state.isLoading = true;
-    state.error = null;
     try {
       const res = await api.tenants.list();
       state.tenants = res.data || [];
 
-      // If activeTenantId is not set or not in list, pick the first tenant
       if (state.tenants.length > 0) {
         const exists = state.tenants.some((t) => t.id === state.activeTenantId);
         if (!exists) {
           state.activeTenantId = state.tenants[0].id;
           storage.setTenantId(state.activeTenantId);
+          socket.joinTenant(state.activeTenantId);
         }
       }
       return state.tenants;
     } catch (err) {
-      state.error = err.message || 'Failed to load tenants';
       console.error('Error loading tenants:', err);
       return [];
     } finally {
@@ -44,6 +47,12 @@ export function createTenantState() {
   };
 
   const loadOrganization = async () => {
+    const token = storage.getToken();
+    if (!token) {
+      state.organization = null;
+      return null;
+    }
+
     try {
       const res = await api.organizations.getDetails();
       state.organization = res.data || null;
@@ -59,9 +68,10 @@ export function createTenantState() {
     if (target) {
       state.activeTenantId = target.id;
       storage.setTenantId(target.id);
+      socket.joinTenant(target.id);
       socket.logActivity({
         action: 'switched_workspace',
-        details: `switched to workspace "${target.name}"`
+        details: `switched to workspace "${target.name}"`,
       });
     }
   };
@@ -84,13 +94,11 @@ export function createTenantState() {
   };
 
   return {
-    state,
     organization: computed(() => state.organization),
     tenants: computed(() => state.tenants),
     activeTenant,
     activeTenantId: computed(() => state.activeTenantId),
     isLoading: computed(() => state.isLoading),
-    error: computed(() => state.error),
     loadTenants,
     loadOrganization,
     switchTenant,
@@ -98,24 +106,4 @@ export function createTenantState() {
   };
 }
 
-let globalTenantInstance = null;
-
-export function provideTenant() {
-  if (!globalTenantInstance) {
-    globalTenantInstance = createTenantState();
-  }
-  provide(TENANT_KEY, globalTenantInstance);
-  return globalTenantInstance;
-}
-
-export function useTenant() {
-  const context = inject(TENANT_KEY);
-  if (!context) {
-    if (!globalTenantInstance) {
-      globalTenantInstance = createTenantState();
-    }
-    return globalTenantInstance;
-  }
-  return context;
-}
-
+export default useTenant;

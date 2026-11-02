@@ -129,13 +129,6 @@
           {{ isLoading ? 'Creating Account...' : 'Get Started' }}
         </button>
       </form>
-
-      <div class="demo-helpers">
-        <span class="demo-text">Need a test login?</span>
-        <button class="demo-btn" @click="fillDemoCredentials" type="button">
-          Fill Demo Credentials
-        </button>
-      </div>
     </div>
   </div>
 </template>
@@ -193,19 +186,6 @@ const handleRegister = async () => {
     setMode('login');
   } else {
     errorMessage.value = res.error || 'Registration failed';
-  }
-};
-
-const fillDemoCredentials = () => {
-  if (mode.value === 'login') {
-    loginForm.email = 'admin@example.com';
-    loginForm.password = 'password123';
-  } else {
-    registerForm.name = 'Alex Rivera';
-    registerForm.email = 'alex.rivera@kanbanflow.io';
-    registerForm.password = 'Pass1234!';
-    registerForm.organizationName = 'Starlight Technologies';
-    registerForm.tenantName = 'Product & Design';
   }
 };
 </script>
@@ -373,36 +353,6 @@ const fillDemoCredentials = () => {
 .submit-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-.demo-helpers {
-  margin-top: 24px;
-  padding-top: 18px;
-  border-top: 1px solid #f1f5f9;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.demo-text {
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-.demo-btn {
-  background: none;
-  border: 1px dashed #cbd5e1;
-  border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #6366f1;
-  cursor: pointer;
-}
-
-.demo-btn:hover {
-  background: #eef2ff;
-  border-color: #a5b4fc;
 }
 </style>
 

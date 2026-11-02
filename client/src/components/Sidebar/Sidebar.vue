@@ -68,7 +68,7 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useRouter } from '../../routes';
 import { useTenant } from '../../context/TenantContext';
-import { api } from '../../services/api';
+import { api, storage } from '../../services/api';
 import socket from '../../services/socket';
 
 const router = useRouter();
@@ -85,7 +85,7 @@ const boardInputRef = ref(null);
 const currentPath = computed(() => router.currentPath.value);
 
 const fetchBoards = async () => {
-  if (!activeTenantId.value) return;
+  if (!storage.getToken() || !activeTenantId.value) return;
   isLoading.value = true;
   try {
     const res = await api.boards.list();
